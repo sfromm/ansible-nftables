@@ -1,0 +1,31 @@
+#!/usr/sbin/nft -f
+# ansible managed
+
+flush ruleset
+
+define pub_iface = "{{ ansible_default_ipv4.interface }}"
+define ALLOWED_IPV4_NETS = { {{ ipv4_allowed_networks | join(", ") }} }
+define ALLOWED_IPV6_NETS = { {{ ipv6_allowed_networks | join(", ") }} }
+define ALLOWED_TCP_SERVICES = { {{ ip_allowed_tcp_ports | join(", ") }} }
+define ALLOWED_UDP_SERVICES = { {{ ip_allowed_udp_ports | join(", ") }} }
+
+table inet filter {
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+    }
+    chain input {
+        type filter hook forward priority filter; policy drop;
+        iif lo accept comment "accept loopback"
+        meta l4proto { icmp, ipv6-icmp } accept comment "accept icmp"
+        ct state vmap { invalid : drop, established : accept, related : accept } comment "accept established/related connections"
+        ip saddr $ALLOWED_IPV4_NETS ct state {new, established}  counter accept comment "accept allowed ipv4 networks"
+        ip6 saddr $ALLOWED_IPV6_NETS ct state {new, established}  counter accept comment "accept allowed ipv6 networks"
+        udp dport $ALLOWED_UDP_SERVICES ct state {new, established}  counter accept comment "accept udp services"
+        tcp dport $ALLOWED_TCP_SERVICES ct state {new, established}  counter accept comment "accept tcp services"
+        # be polite and reject with "port unreachable" icmp response
+        reject
+    }
+}

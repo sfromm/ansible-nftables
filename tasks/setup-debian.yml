@@ -1,0 +1,20 @@
+---
+- name: install nftables
+  package: name={{ item }} state=present
+  with_items: "{{ nftables_packages }}"
+
+- name: template nftables
+  template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: 0755
+    backup: yes
+  notify: restart nftables
+
+- name: enable and start nftables
+  service:
+    name: nftables
+    state: started
+    enabled: yes
