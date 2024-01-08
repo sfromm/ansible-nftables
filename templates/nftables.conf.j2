@@ -3,11 +3,12 @@
 
 flush ruleset
 
-define pub_iface = "{{ ansible_default_ipv4.interface }}"
+define DEV_WAN = "{{ ansible_default_ipv4.interface }}"
+{% if nftables_enable_wireguard %}
+define DEV_WIREGUARD = "wg0"
+{% endif %}
 define ALLOWED_IPV4_NETS = { {{ ipv4_allowed_networks | join(", ") }} }
 define ALLOWED_IPV6_NETS = { {{ ipv6_allowed_networks | join(", ") }} }
-define ALLOWED_TCP_SERVICES = { {{ ip_allowed_tcp_ports | join(", ") }} }
-define ALLOWED_UDP_SERVICES = { {{ ip_allowed_udp_ports | join(", ") }} }
 
 table inet filter {
     chain output {
@@ -20,11 +21,23 @@ table inet filter {
         type filter hook forward priority filter; policy drop;
         iif lo accept comment "accept loopback"
         meta l4proto { icmp, ipv6-icmp } accept comment "accept icmp"
-        ct state vmap { invalid : drop, established : accept, related : accept } comment "accept established/related connections"
-        ip saddr $ALLOWED_IPV4_NETS ct state {new, established}  counter accept comment "accept allowed ipv4 networks"
-        ip6 saddr $ALLOWED_IPV6_NETS ct state {new, established}  counter accept comment "accept allowed ipv6 networks"
-        udp dport $ALLOWED_UDP_SERVICES ct state {new, established}  counter accept comment "accept udp services"
-        tcp dport $ALLOWED_TCP_SERVICES ct state {new, established}  counter accept comment "accept tcp services"
+        ct state { established, related } counter accept comment "accept established/related connections"
+        ct state { invalid } counter drop comment "drop invalid connection state"
+        pkttype { broadcast, multicast } accept comment "accept multicast & broadcast"
+{% if nftables_enable_wireguard %}
+        iifname $DEV_WIREGUARD oif $DEV_WAN counter accept;
+        iifname $DEV_WAN oifname $DEV_WIREGUARD ct state established,related counter accept;
+{% endif %}
+        ip saddr $ALLOWED_IPV4_NETS ct state { new, established }  counter accept comment "accept allowed ipv4 networks"
+        ip6 saddr $ALLOWED_IPV6_NETS ct state { new, established }  counter accept comment "accept allowed ipv6 networks"
+{% if ip_allowed_udp_ports %}
+        udp dport { {{ ip_allowed_udp_ports | join(", ") }} } ct state { new, established }  counter accept comment "accept udp services"
+{% endif %}
+{% if ip_allowed_tcp_ports %}
+        tcp dport { {{ ip_allowed_tcp_ports | join(", ") }} } ct state { new, established }  counter accept comment "accept tcp services"
+{% endif %}
+        # if you need to log denials
+        # limit rate 60/minute burst 100 packets log prefix "IN - Drop: " comment "Log any unmatched traffic"
         # be polite and reject with "port unreachable" icmp response
         reject
     }
