@@ -6,3 +6,4 @@ ip_allowed_udp_ports: [ ]
 ipv4_multicast_net: 224.0.0.0/4
 ipv6_multicast_net: ff00::/8
 ipv6_scope_link_net: fe80::/10
+nftables_enable_wireguard: no
